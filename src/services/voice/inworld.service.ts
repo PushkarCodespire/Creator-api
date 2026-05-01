@@ -84,7 +84,7 @@ export async function textToSpeech(voiceId: string, text: string): Promise<strin
   const filename = `voice_${uuidv4()}.mp3`;
 
   if (isCloudinaryConfigured) {
-    return uploadToCloudinary(audioBuffer, 'chat', 'video');
+    return uploadToCloudinary(audioBuffer, 'chat', 'video', ['tts_audio']);
   }
 
   const uploadsDir = process.env.UPLOAD_DIR || './uploads';

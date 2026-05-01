@@ -13,6 +13,7 @@ import fs from 'fs';
 import path from 'path';
 import { config } from './config';
 import { getUploadPathPrefixes } from './utils/uploadPaths';
+import { isCloudinaryConfigured, cleanupTtsAudio } from './utils/cloudinary';
 
 // Load environment variables
 dotenv.config();
@@ -396,6 +397,13 @@ async function startServer() {
       logInfo('✅ Chat processing queue worker initialized');
     } else {
       logInfo('Chat processing queue disabled (REDIS_HOST/REDIS_URL not set)');
+    }
+
+    // Delete TTS audio older than 30 minutes from Cloudinary — runs on startup then every 30 min
+    if (isCloudinaryConfigured) {
+      cleanupTtsAudio(30).catch(() => {});
+      setInterval(() => cleanupTtsAudio(30).catch(() => {}), 30 * 60 * 1000);
+      logInfo('✅ Cloudinary TTS audio cleanup scheduled (30 min interval)');
     }
 
     // Start server
