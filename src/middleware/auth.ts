@@ -34,6 +34,13 @@ export interface AuthRequest extends Request {
     creator?: { id: string } | null;
     company?: { id: string } | null;
   };
+  // Explicit re-declaration prevents TypeScript from losing these through generic
+  // interface inheritance when @types/express uses multi-level generic chains.
+  params: Record<string, string>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  query: Record<string, any>;
 }
 
 interface JwtPayload {
