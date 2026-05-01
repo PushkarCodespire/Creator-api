@@ -4,6 +4,7 @@
 // Enhanced YouTube transcript fetching with Redis caching
 // Based on Phase 3 of the implementation plan
 
+import axios from 'axios';
 import { fetchYouTubeTranscript, cleanTranscript, extractVideoId } from '../../utils/youtube';
 import { getRedisClient, isRedisConnected } from '../../utils/redis';
 import { AppError } from '../../utils/errors';
@@ -20,22 +21,18 @@ async function fetchViaWorker(videoId: string): Promise<{
   transcript: string;
   segments: { text: string; offset: number; duration: number }[];
 } | null> {
-  const workerUrl = process.env.YOUTUBE_TRANSCRIPT_WORKER_URL?.replace(/\/$/, '');
-  const workerToken = process.env.YOUTUBE_TRANSCRIPT_WORKER_TOKEN;
+  const workerUrl = process.env.YOUTUBE_TRANSCRIPT_WORKER_URL?.trim().replace(/\/$/, '');
+  const workerToken = process.env.YOUTUBE_TRANSCRIPT_WORKER_TOKEN?.trim();
   if (!workerUrl) return null;
 
   const headers: Record<string, string> = {};
   if (workerToken) headers['Authorization'] = `Bearer ${workerToken}`;
 
-  logInfo(`[YouTubeService] Calling worker: ${workerUrl}/transcript?videoId=${videoId}`);
+  const url = `${workerUrl}/transcript?videoId=${videoId}`;
+  logInfo(`[YouTubeService] Calling worker: ${url}`);
   try {
-    const resp = await fetch(`${workerUrl}/transcript?videoId=${videoId}`, { headers });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => '');
-      logWarning(`[YouTubeService] Worker returned ${resp.status}: ${body.slice(0, 200)}`);
-      return null;
-    }
-    const data = await resp.json() as { transcript?: string; segments?: { text: string; offset: number; duration: number }[]; videoId?: string };
+    const resp = await axios.get(url, { headers, timeout: 20000 });
+    const data = resp.data as { transcript?: string; segments?: { text: string; offset: number; duration: number }[]; videoId?: string };
     if (!data?.transcript) {
       logWarning(`[YouTubeService] Worker response missing transcript field: ${JSON.stringify(data).slice(0, 200)}`);
       return null;
@@ -43,7 +40,11 @@ async function fetchViaWorker(videoId: string): Promise<{
     logInfo(`[YouTubeService] Worker returned transcript (${data.transcript.length} chars)`);
     return { videoId: data.videoId || videoId, transcript: data.transcript, segments: data.segments || [] };
   } catch (err) {
-    logError(err instanceof Error ? err : new Error(String(err)), { context: '[YouTubeService] Worker fetch failed' });
+    if (axios.isAxiosError(err)) {
+      logWarning(`[YouTubeService] Worker returned ${err.response?.status ?? 'no response'}: ${JSON.stringify(err.response?.data ?? err.message).slice(0, 200)}`);
+    } else {
+      logError(err instanceof Error ? err : new Error(String(err)), { context: '[YouTubeService] Worker fetch failed' });
+    }
     return null;
   }
 }
