@@ -87,9 +87,9 @@ const io = new Server(httpServer, {
 // MIDDLEWARE
 // ===========================================
 
-// Sentry v10+ automatically handles requests via the Express integration
-// No need for requestHandler or tracingHandler anymore
-
+// Trust the first proxy hop (required on Render/Heroku/any load-balanced host)
+// so express-rate-limit and req.ip read the real client IP from X-Forwarded-For.
+app.set('trust proxy', 1);
 
 // Security headers with Helmet
 app.use(helmet({
