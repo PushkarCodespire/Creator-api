@@ -5,6 +5,7 @@
 // This allows TypeScript to know about our custom user object
 
 import { UserRole } from '@prisma/client';
+import { Readable } from 'stream';
 
 declare global {
   namespace Express {
@@ -17,8 +18,23 @@ declare global {
         creator?: { id: string } | null;
         company?: { id: string } | null;
       };
-      guestId?: string; // For anonymous chat users
-      io?: unknown; // Socket.io instance
+      guestId?: string;
+      io?: unknown;
+    }
+
+    namespace Multer {
+      interface File {
+        fieldname: string;
+        originalname: string;
+        encoding: string;
+        mimetype: string;
+        size: number;
+        destination: string;
+        filename: string;
+        path: string;
+        buffer: Buffer;
+        stream: Readable;
+      }
     }
   }
 }
