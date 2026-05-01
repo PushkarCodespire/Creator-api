@@ -39,6 +39,7 @@
     "bottleneck": "^2.19.5",
     "bull": "^4.16.5",
     "burner-email-providers": "^1.0.67",
+    "cloudinary": "^2.10.0",
     "cors": "^2.8.5",
     "disposable-email-domains": "^1.0.62",
     "dotenv": "^17.2.3",

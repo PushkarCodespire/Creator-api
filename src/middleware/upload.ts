@@ -10,6 +10,7 @@ import type { Request } from 'express';
 import { config } from '../config';
 import { buildUploadUrl } from '../utils/uploadPaths';
 import { logError } from '../utils/logger';
+import { isCloudinaryConfigured } from '../utils/cloudinary';
 
 // Ensure upload directories exist
 const uploadDirs = ['avatars', 'content', 'documents', 'temp', 'chat'];
@@ -24,10 +25,13 @@ uploadDirs.forEach(dir => {
 // STORAGE CONFIGURATION
 // ===========================================
 
-const createStorage = (subDir: string) => {
+const createStorage = (_subDir: string) => {
+  if (isCloudinaryConfigured) {
+    return multer.memoryStorage();
+  }
   return multer.diskStorage({
     destination: (req, file, cb) => {
-      const uploadPath = path.join(config.upload.dir, subDir);
+      const uploadPath = path.join(config.upload.dir, _subDir);
       cb(null, uploadPath);
     },
     filename: (req, file, cb) => {

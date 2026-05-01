@@ -16,6 +16,16 @@ import mime from 'mime-types';
 import { buildUploadUrl } from '../utils/uploadPaths';
 import { config } from '../config';
 import { logInfo, logWarning, logDebug, logError } from '../utils/logger';
+import { isCloudinaryConfigured, uploadToCloudinary } from '../utils/cloudinary';
+
+// Upload a multer file to Cloudinary (if configured) or return local disk URL
+const saveFile = async (file: Express.Multer.File, folder: string): Promise<string> => {
+  if (isCloudinaryConfigured) {
+    const resourceType = file.mimetype.startsWith('video/') ? 'video' : 'auto';
+    return uploadToCloudinary(file.buffer, folder, resourceType);
+  }
+  return buildUploadUrl(`${folder}/${file.filename}`);
+};
 
 const router = Router();
 
@@ -36,6 +46,10 @@ const isSafeFilename = (filename: string) => {
 };
 
 const logUploadSaved = (folder: string, filename: string) => {
+  if (isCloudinaryConfigured) {
+    logInfo('Upload saved (Cloudinary)', { folder, filename });
+    return;
+  }
   const resolvedPath = path.resolve(config.upload.dir, folder, filename);
   const exists = fs.existsSync(resolvedPath);
   logInfo('Upload saved', { folder, filename, exists, path: resolvedPath });
@@ -102,9 +116,9 @@ router.post(
     if (!file) {
       throw new AppError('No file uploaded. Please use field name "avatar"', 400);
     }
-    logUploadSaved('avatars', file.filename);
+    logUploadSaved('avatars', file.filename ?? file.originalname);
     const userId = req.user!.id;
-    const avatarUrl = buildUploadUrl(`avatars/${file.filename}`);
+    const avatarUrl = await saveFile(file, 'avatars');
 
     // Update user avatar in database
     await prisma.user.update({
@@ -155,9 +169,9 @@ router.post(
     if (!file) {
       throw new AppError('No file uploaded. Please use field name "cover"', 400);
     }
-    logUploadSaved('content', file.filename);
+    logUploadSaved('content', file.filename ?? file.originalname);
     const userId = req.user!.id;
-    const coverUrl = buildUploadUrl(`content/${file.filename}`);
+    const coverUrl = await saveFile(file, 'content');
 
     // Update creator cover image if user is a creator
     const creator = await prisma.creator.findUnique({
@@ -194,10 +208,10 @@ router.post(
     if (!req.file) {
       throw new AppError('No file uploaded', 400);
     }
-    logUploadSaved('content', req.file.filename);
+    logUploadSaved('content', req.file.filename ?? req.file.originalname);
 
     const userId = req.user!.id;
-    const documentUrl = buildUploadUrl(`content/${req.file.filename}`);
+    const documentUrl = await saveFile(req.file, 'content');
 
     // Verify user is a creator
     const creator = await prisma.creator.findUnique({
@@ -240,10 +254,9 @@ router.post(
     if (!file) {
       throw new AppError('No file uploaded. Please use field name "file"', 400);
     }
-    logUploadSaved('content', file.filename);
+    logUploadSaved('content', file.filename ?? file.originalname);
 
-    // Determine URL based on storage path - using /content/ as it's public
-    const fileUrl = buildUploadUrl(`content/${file.filename}`);
+    const fileUrl = await saveFile(file, 'content');
 
     res.json({
       success: true,
@@ -271,50 +284,20 @@ router.post(
     if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
       throw new AppError('No files uploaded', 400);
     }
-    (req.files as Express.Multer.File[]).forEach((file: Express.Multer.File) => logUploadSaved('chat', file.filename));
+    (req.files as Express.Multer.File[]).forEach((file: Express.Multer.File) =>
+      logUploadSaved('chat', file.filename ?? file.originalname)
+    );
 
-    // Custom Auth Check: Accept either authenticated user or guest identifier
     const user = req.user;
-
-    // If no user attached by middleware (because we removed global auth), check token manually
-    if (!user && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      try {
-        const _token = req.headers.authorization.split(' ')[1];
-        // We need to verify token - importing jwt and config manually or trusting user is enough?
-        // Better to verify. config import might be needed at top of file, but I can't add imports easily with replace.
-        // I will assume config is available or use a try/catch block that falls back to guest.
-        // Actually, without importing 'config', I can't verify properly.
-        // But wait, the user's 'revert' might imply they want the imports back to simple too.
-
-        // Let's try to grab config/jwt if possible, or just skip token check if we can rely on guestId?
-        // But auth users need to be identified as users for the file ownership? 
-        // Actually, chat media doesn't seem to enforce ownership in the same way as avatar.
-        // It just returns the URL.
-
-        // So maybe we don't strictly need `req.user` populated for the upload to succeed?
-        // We just need to ALLOW the request.
-      } catch (_e) {
-        // Ignore invalid token
-      }
-    }
-
     const guestId = req.headers['x-guest-id'];
-
-    if (!user && !guestId && (!req.headers.authorization)) {
-      // If we have a token header but manual verify failed/skipped, we might still want to allow if we are just "permitting" the upload.
-      // But we should enforce some security.
-      // If I cannot easily verify token here without imports, I will rely on the presence of authorization header OR guest id.
-      throw new AppError('Unauthorized: Token or Guest ID required', 401);
-    }
-
-    // For now, allow if token is present (even if not verified here, limiting scope) OR guestId is present.
-    if (!req.headers.authorization && !guestId) {
+    if (!user && !guestId && !req.headers.authorization) {
       throw new AppError('Unauthorized: Token or Guest ID required', 401);
     }
 
     // Process uploaded files
-    const mediaFiles = (req.files as Express.Multer.File[]).map((file) => {
-      const fileUrl = buildUploadUrl(`chat/${file.filename}`);
+    const mediaFiles = await Promise.all(
+      (req.files as Express.Multer.File[]).map(async (file) => {
+      const fileUrl = await saveFile(file, 'chat');
       let mediaType: 'image' | 'video' | 'audio' | 'file' = 'file';
 
       if (file.mimetype.startsWith('image/')) {
@@ -332,7 +315,8 @@ router.post(
         size: file.size,
         mimetype: file.mimetype
       };
-    });
+    })
+    );
 
     res.json({
       success: true,
