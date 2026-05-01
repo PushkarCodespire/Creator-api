@@ -142,9 +142,17 @@ export const uploadChatMedia = multer({
   }
 }).array('media', 5); // Max 5 files per upload
 
-// Voice clone upload (single audio file)
+// Voice clone upload — always disk storage (file.path required by voice cloning services)
 export const uploadVoiceAudio = multer({
-  storage: createStorage('chat'),
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const uploadPath = path.join(config.upload.dir, 'chat');
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
+    },
+  }),
   fileFilter: (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => { void req;
     const audioTypes = ['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/x-m4a'];
     if (audioTypes.includes(file.mimetype)) {
@@ -153,7 +161,7 @@ export const uploadVoiceAudio = multer({
       cb(new Error('Only audio files (MP3, WAV, M4A) are allowed'));
     }
   },
-  limits: { fileSize: 25 * 1024 * 1024 } // 25MB max
+  limits: { fileSize: 25 * 1024 * 1024 },
 }).single('audio');
 
 // Post media upload (images, videos) - expects 'file' field
