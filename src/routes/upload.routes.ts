@@ -50,10 +50,11 @@ const logUploadSaved = (folder: string, filename: string) => {
 const handleMulterError = (expectedField: string) => {
   return (err: Error | null, req: Request, res: Response, next: (err?: unknown) => void) => {
     if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
+      const multerErr = err as multer.MulterError;
+      if (multerErr.code === 'LIMIT_FILE_SIZE') {
         return sendError(res, 400, 'FILE_TOO_LARGE', 'File too large', err.message);
       }
-      if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+      if (multerErr.code === 'LIMIT_UNEXPECTED_FILE') {
         return sendError(
           res,
           400,

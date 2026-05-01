@@ -59,9 +59,11 @@ export const errorHandler = (
   );
 };
 
-// Async handler wrapper
-export const asyncHandler = (fn: Function) => {
+// Async handler wrapper — generic so callers typing req as AuthRequest still see params/body/query
+export const asyncHandler = <TReq extends Request = Request>(
+  fn: (req: TReq, res: Response, next: NextFunction) => Promise<unknown> | unknown
+) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    Promise.resolve(fn(req, res, next)).catch(next);
+    Promise.resolve(fn(req as TReq, res, next)).catch(next);
   };
 };
