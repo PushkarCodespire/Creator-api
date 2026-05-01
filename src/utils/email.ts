@@ -40,7 +40,7 @@ const sendViaBrevo = async (options: EmailOptions): Promise<boolean> => {
       to: [{ email: options.to }],
       subject: options.subject,
       htmlContent: options.html,
-      textContent: options.text || '',
+      ...(options.text ? { textContent: options.text } : {}),
     }),
   });
   if (!res.ok) {
