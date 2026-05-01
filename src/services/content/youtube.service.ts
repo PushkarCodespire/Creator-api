@@ -7,7 +7,7 @@
 import { fetchYouTubeTranscript, cleanTranscript, extractVideoId } from '../../utils/youtube';
 import { getRedisClient, isRedisConnected } from '../../utils/redis';
 import { AppError } from '../../utils/errors';
-import { logDebug, logWarning, logInfo } from '../../utils/logger';
+import { logDebug, logWarning, logInfo, logError } from '../../utils/logger';
 
 const CACHE_TTL = 24 * 60 * 60; // 24 hours in seconds
 
@@ -27,13 +27,23 @@ async function fetchViaWorker(videoId: string): Promise<{
   const headers: Record<string, string> = {};
   if (workerToken) headers['Authorization'] = `Bearer ${workerToken}`;
 
+  logInfo(`[YouTubeService] Calling worker: ${workerUrl}/transcript?videoId=${videoId}`);
   try {
     const resp = await fetch(`${workerUrl}/transcript?videoId=${videoId}`, { headers });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      logWarning(`[YouTubeService] Worker returned ${resp.status}: ${body.slice(0, 200)}`);
+      return null;
+    }
     const data = await resp.json() as { transcript?: string; segments?: { text: string; offset: number; duration: number }[]; videoId?: string };
-    if (!data?.transcript) return null;
+    if (!data?.transcript) {
+      logWarning(`[YouTubeService] Worker response missing transcript field: ${JSON.stringify(data).slice(0, 200)}`);
+      return null;
+    }
+    logInfo(`[YouTubeService] Worker returned transcript (${data.transcript.length} chars)`);
     return { videoId: data.videoId || videoId, transcript: data.transcript, segments: data.segments || [] };
-  } catch {
+  } catch (err) {
+    logError(err instanceof Error ? err : new Error(String(err)), { context: '[YouTubeService] Worker fetch failed' });
     return null;
   }
 }
