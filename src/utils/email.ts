@@ -1,13 +1,13 @@
 // ===========================================
 // EMAIL SERVICE
-// Production: Resend HTTP API (works on Render — no SMTP port restrictions)
-// Local dev:  nodemailer SMTP (Gmail app password or any SMTP provider)
+// Priority: Brevo API → nodemailer SMTP (local dev)
+// Set BREVO_API_KEY for production (no domain verification needed, just sender email)
 // ===========================================
 
 import 'dotenv/config';
 import { logInfo, logError, logDebug } from './logger';
 
-const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 const SMTP_HOST = process.env.SMTP_HOST || '';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USER = process.env.SMTP_USER || '';
@@ -27,28 +27,28 @@ interface EmailOptions {
   text?: string;
 }
 
-// ── Resend (HTTP API — no SMTP port needed) ──────────────────────────────────
-const sendViaResend = async (options: EmailOptions): Promise<boolean> => {
-  const res = await fetch('https://api.resend.com/emails', {
+// ── Brevo / Sendinblue (HTTP API — no domain verification needed) ────────────
+const sendViaBrevo = async (options: EmailOptions): Promise<boolean> => {
+  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${RESEND_API_KEY}`,
+      'api-key': BREVO_API_KEY,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: FROM_HEADER,
-      to: [options.to],
+      sender: { name: FROM_NAME, email: FROM_EMAIL },
+      to: [{ email: options.to }],
       subject: options.subject,
-      html: options.html,
-      text: options.text || '',
+      htmlContent: options.html,
+      textContent: options.text || '',
     }),
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Resend API error ${res.status}: ${body}`);
+    throw new Error(`Brevo API error ${res.status}: ${body}`);
   }
-  const data = await res.json() as { id?: string };
-  logDebug('Resend email sent', { to: options.to, subject: options.subject, id: data.id });
+  const data = await res.json() as { messageId?: string };
+  logDebug('Brevo email sent', { to: options.to, subject: options.subject, messageId: data.messageId });
   return true;
 };
 
@@ -82,7 +82,7 @@ const sendViaSMTP = async (options: EmailOptions): Promise<boolean> => {
 };
 
 /**
- * Send email. Uses Resend API when RESEND_API_KEY is set (production),
+ * Send email. Uses Brevo API when BREVO_API_KEY is set (production),
  * falls back to nodemailer SMTP for local dev.
  */
 export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
@@ -92,9 +92,9 @@ export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
   }
 
   try {
-    if (RESEND_API_KEY) {
-      await sendViaResend(options);
-      logInfo(`Email sent (Resend): ${options.subject} to ${options.to}`);
+    if (BREVO_API_KEY) {
+      await sendViaBrevo(options);
+      logInfo(`Email sent (Brevo): ${options.subject} to ${options.to}`);
       return true;
     }
     const sent = await sendViaSMTP(options);
