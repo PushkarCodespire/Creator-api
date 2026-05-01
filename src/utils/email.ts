@@ -1,11 +1,13 @@
 // ===========================================
-// EMAIL SERVICE - SMTP (nodemailer)
+// EMAIL SERVICE
+// Production: Resend HTTP API (works on Render — no SMTP port restrictions)
+// Local dev:  nodemailer SMTP (Gmail app password or any SMTP provider)
 // ===========================================
 
 import 'dotenv/config';
-import nodemailer, { Transporter } from 'nodemailer';
 import { logInfo, logError, logDebug } from './logger';
 
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const SMTP_HOST = process.env.SMTP_HOST || '';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USER = process.env.SMTP_USER || '';
@@ -14,21 +16,9 @@ const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@creatorplatform.com';
 const FROM_NAME = process.env.FROM_NAME || 'Creator Platform';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// If FROM_EMAIL already contains `<...>` treat it as a full from header; otherwise wrap with FROM_NAME.
 const FROM_HEADER = FROM_EMAIL.includes('<')
   ? FROM_EMAIL
   : `"${FROM_NAME}" <${FROM_EMAIL}>`;
-
-let transporter: Transporter | null = null;
-
-if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_PORT === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS },
-  });
-}
 
 interface EmailOptions {
   to: string;
@@ -37,8 +27,63 @@ interface EmailOptions {
   text?: string;
 }
 
+// ── Resend (HTTP API — no SMTP port needed) ──────────────────────────────────
+const sendViaResend = async (options: EmailOptions): Promise<boolean> => {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: FROM_HEADER,
+      to: [options.to],
+      subject: options.subject,
+      html: options.html,
+      text: options.text || '',
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Resend API error ${res.status}: ${body}`);
+  }
+  const data = await res.json() as { id?: string };
+  logDebug('Resend email sent', { to: options.to, subject: options.subject, id: data.id });
+  return true;
+};
+
+// ── nodemailer SMTP (local dev fallback) ────────────────────────────────────
+let _transporter: import('nodemailer').Transporter | null = null;
+const getTransporter = async () => {
+  if (_transporter) return _transporter;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  const nodemailer = await import('nodemailer');
+  _transporter = nodemailer.default.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+  return _transporter;
+};
+
+const sendViaSMTP = async (options: EmailOptions): Promise<boolean> => {
+  const transporter = await getTransporter();
+  if (!transporter) return false;
+  const info = await transporter.sendMail({
+    from: FROM_HEADER,
+    to: options.to,
+    subject: options.subject,
+    html: options.html,
+    text: options.text || '',
+  });
+  logDebug('SMTP email sent', { to: options.to, subject: options.subject, messageId: info.messageId });
+  return true;
+};
+
 /**
- * Send email via SMTP (nodemailer).
+ * Send email. Uses Resend API when RESEND_API_KEY is set (production),
+ * falls back to nodemailer SMTP for local dev.
  */
 export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
   if (process.env.EMAIL_ENABLED === 'false') {
@@ -46,32 +91,22 @@ export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
     return false;
   }
 
-  if (!transporter) {
-    logInfo(
-      `Email skipped (SMTP not configured): ${options.subject} to ${options.to}`
-    );
-    return false;
-  }
-
   try {
-    const info = await transporter.sendMail({
-      from: FROM_HEADER,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || '',
-    });
-    logDebug('SMTP email response summary', {
-      to: options.to,
-      subject: options.subject,
-      messageId: info.messageId,
-      response: info.response,
-    });
-    logInfo(`Email sent (SMTP): ${options.subject} to ${options.to}`);
-    return true;
+    if (RESEND_API_KEY) {
+      await sendViaResend(options);
+      logInfo(`Email sent (Resend): ${options.subject} to ${options.to}`);
+      return true;
+    }
+    const sent = await sendViaSMTP(options);
+    if (sent) {
+      logInfo(`Email sent (SMTP): ${options.subject} to ${options.to}`);
+      return true;
+    }
+    logInfo(`Email skipped (not configured): ${options.subject} to ${options.to}`);
+    return false;
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    logError(new Error(msg), { context: 'SMTP email send failed' });
+    logError(new Error(msg), { context: 'Email send failed' });
     return false;
   }
 };

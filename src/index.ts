@@ -288,6 +288,27 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// One-time admin seed endpoint — remove after first use
+app.post('/api/setup-admin', async (req, res) => {
+  const secret = req.headers['x-setup-secret'];
+  if (secret !== process.env.SETUP_SECRET) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const bcrypt = await import('bcryptjs');
+    const hash = await bcrypt.default.hash('Admin@12345', 12);
+    const prisma = (await import('../prisma/client')).default;
+    const user = await prisma.user.upsert({
+      where: { email: 'admin@platform.com' },
+      update: { role: 'ADMIN' as never, emailVerified: true, password: hash },
+      create: { email: 'admin@platform.com', password: hash, name: 'Admin', role: 'ADMIN' as never, emailVerified: true },
+    });
+    return res.json({ success: true, email: user.email, role: user.role });
+  } catch (e) {
+    return res.status(500).json({ error: String(e) });
+  }
+});
+
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/user', userDashboardRoutes);
