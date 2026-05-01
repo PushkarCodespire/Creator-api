@@ -510,7 +510,7 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
           try {
             const audioPath = await tryProvider(provider);
             if (audioPath) {
-              audioUrl = `/uploads/${audioPath}`;
+              audioUrl = audioPath.startsWith('http') ? audioPath : `/uploads/${audioPath}`;
               voiceProviderUsed = provider;
               break;
             }

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
+import { isCloudinaryConfigured, uploadToCloudinary } from '../../utils/cloudinary';
 
 const INWORLD_TTS_BASE = 'https://api.inworld.ai';
 const INWORLD_VOICES_BASE = 'https://api.inworld.ai';
@@ -80,14 +81,16 @@ export async function textToSpeech(voiceId: string, text: string): Promise<strin
   );
 
   const audioBuffer = Buffer.from(res.data.audioContent, 'base64');
+  const filename = `voice_${uuidv4()}.mp3`;
+
+  if (isCloudinaryConfigured) {
+    return uploadToCloudinary(audioBuffer, 'chat', 'video');
+  }
 
   const uploadsDir = process.env.UPLOAD_DIR || './uploads';
   const chatDir = path.join(uploadsDir, 'chat');
   if (!fs.existsSync(chatDir)) fs.mkdirSync(chatDir, { recursive: true });
-
-  const filename = `voice_${uuidv4()}.mp3`;
   fs.writeFileSync(path.join(chatDir, filename), audioBuffer);
-
   return `chat/${filename}`;
 }
 

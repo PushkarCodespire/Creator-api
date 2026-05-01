@@ -3,6 +3,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import axios from 'axios';
 import FormData from 'form-data';
+import { isCloudinaryConfigured, uploadToCloudinary } from '../../utils/cloudinary';
 
 const ELEVENLABS_BASE = 'https://api.elevenlabs.io/v1';
 
@@ -61,16 +62,17 @@ export async function textToSpeech(voiceId: string, text: string): Promise<strin
     }
   );
 
-  // Save audio file
+  const audioBuffer = Buffer.from(res.data);
+  const filename = `voice_${uuidv4()}.mp3`;
+
+  if (isCloudinaryConfigured) {
+    return uploadToCloudinary(audioBuffer, 'chat', 'video');
+  }
+
   const uploadsDir = process.env.UPLOAD_DIR || './uploads';
   const chatDir = path.join(uploadsDir, 'chat');
   if (!fs.existsSync(chatDir)) fs.mkdirSync(chatDir, { recursive: true });
-
-  const filename = `voice_${uuidv4()}.mp3`;
-  const filePath = path.join(chatDir, filename);
-
-  fs.writeFileSync(filePath, Buffer.from(res.data));
-
+  fs.writeFileSync(path.join(chatDir, filename), audioBuffer);
   return `chat/${filename}`;
 }
 
