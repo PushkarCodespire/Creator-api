@@ -300,8 +300,8 @@ app.post('/api/setup-admin', async (req, res) => {
     const prisma = (await import('../prisma/client')).default;
     const user = await prisma.user.upsert({
       where: { email: 'admin@platform.com' },
-      update: { role: 'ADMIN' as never, emailVerified: true, password: hash },
-      create: { email: 'admin@platform.com', password: hash, name: 'Admin', role: 'ADMIN' as never, emailVerified: true },
+      update: { role: 'ADMIN' as never, isVerified: true, password: hash },
+      create: { email: 'admin@platform.com', password: hash, name: 'Admin', role: 'ADMIN' as never, isVerified: true },
     });
     return res.json({ success: true, email: user.email, role: user.role });
   } catch (e) {
